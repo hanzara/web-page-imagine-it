@@ -31,6 +31,7 @@ import { useEnhancedWallet } from "@/hooks/useEnhancedWallet";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { SendReceiveModal } from "@/components/SendReceiveModal";
 
 // Payment Methods with detailed sub-options
 const paymentMethods = [
@@ -224,6 +225,10 @@ export const PaymentsSection = () => {
     accountNumber: "",
     paymentMethod: ""
   });
+
+  // Modal states
+  const [sendModalOpen, setSendModalOpen] = useState(false);
+  const [withdrawModalOpen, setWithdrawModalOpen] = useState(false);
 
   const { walletCurrencies, sendPayment, getCurrencyBalance, loading } = useEnhancedWallet();
   const { toast } = useToast();
@@ -656,7 +661,11 @@ export const PaymentsSection = () => {
                   <span className="font-medium">{selectedSendSubDestination}</span>
                 </div>
               </div>
-              <Button className="w-full">
+              <Button 
+                className="w-full"
+                onClick={() => setSendModalOpen(true)}
+                disabled={!selectedSendSource || !selectedSendDestination || !selectedSendSubSource || !selectedSendSubDestination}
+              >
                 <Send className="w-4 h-4 mr-2" />
                 Continue to Send Money
               </Button>
@@ -789,7 +798,11 @@ export const PaymentsSection = () => {
                   </div>
                 </div>
               </div>
-              <Button className="w-full">
+              <Button 
+                className="w-full"
+                onClick={() => setWithdrawModalOpen(true)}
+                disabled={!selectedWithdrawSource || !selectedWithdrawDestination || !selectedWithdrawSubDestination}
+              >
                 <ArrowDownToLine className="w-4 h-4 mr-2" />
                 Continue to Withdraw
               </Button>
@@ -837,6 +850,22 @@ export const PaymentsSection = () => {
           <WithdrawTab />
         </TabsContent>
       </Tabs>
+
+      {/* Send Modal */}
+      <SendReceiveModal
+        isOpen={sendModalOpen}
+        onClose={() => setSendModalOpen(false)}
+        mode="send"
+        defaultCurrency={selectedWithdrawSource || "USD"}
+      />
+
+      {/* Withdraw Modal */}
+      <SendReceiveModal
+        isOpen={withdrawModalOpen}
+        onClose={() => setWithdrawModalOpen(false)}
+        mode="receive"
+        defaultCurrency={selectedWithdrawSource || "USD"}
+      />
     </div>
   );
 };

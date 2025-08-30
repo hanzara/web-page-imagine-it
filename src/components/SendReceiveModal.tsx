@@ -8,7 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { ArrowDownLeft, ArrowUpRight, Copy, QrCode, Send, Zap, Wallet, CreditCard, Building2, Smartphone, Clock, Shield, CheckCircle, Info, ArrowLeft } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { ArrowDownLeft, ArrowUpRight, Copy, QrCode, Send, Zap, Wallet, CreditCard, Building2, Smartphone, Clock, Shield, CheckCircle, Info, ArrowLeft, AlertTriangle, Eye } from "lucide-react";
 import { useWallet } from "@/hooks/useWallet";
 import { useToast } from "@/hooks/use-toast";
 
@@ -31,10 +32,13 @@ export const SendReceiveModal = ({ isOpen, onClose, mode, defaultCurrency = 'USD
   const [message, setMessage] = useState('');
   const [channel, setChannel] = useState('');
   const [timing, setTiming] = useState('instant');
+  const [destinationCurrency, setDestinationCurrency] = useState('UGX');
   
   // Authentication state
   const [pin, setPin] = useState('');
   const [otpCode, setOtpCode] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [showPin, setShowPin] = useState(false);
   
   // UI state
   const [loading, setLoading] = useState(false);
@@ -57,15 +61,23 @@ export const SendReceiveModal = ({ isOpen, onClose, mode, defaultCurrency = 'USD
   const getConversionInfo = () => {
     const amountNum = parseFloat(amount) || 0;
     const fromRate = exchangeRates[currency] || { usd: 1, ugx: 3650 };
-    const fee = Math.max(1.20, amountNum * fromRate.usd * 0.024); // 2.4% fee, minimum $1.20
-    const ugxAmount = amountNum * fromRate.ugx;
-    const netReceived = ugxAmount - (fee * exchangeRates.USD.ugx);
+    const toRate = exchangeRates[destinationCurrency] || { usd: 0.00027, ugx: 1 };
+    
+    // Calculate base fees (2.4% + network fees)
+    const networkFee = channel === 'mobile_money' ? 0.5 : channel === 'crypto' ? 2.0 : 1.0;
+    const percentageFee = amountNum * fromRate.usd * 0.024;
+    const totalFee = Math.max(1.20, percentageFee + networkFee);
+    
+    const convertedAmount = (amountNum * fromRate.ugx) / toRate.ugx;
+    const netReceived = convertedAmount - (totalFee * exchangeRates.USD.ugx / toRate.ugx);
     
     return {
-      ugxAmount,
-      fee,
+      convertedAmount,
+      fee: totalFee,
       netReceived,
-      rate: fromRate.ugx / fromRate.usd
+      rate: fromRate.ugx / toRate.ugx,
+      networkFee,
+      percentageFee
     };
   };
 
@@ -74,12 +86,12 @@ export const SendReceiveModal = ({ isOpen, onClose, mode, defaultCurrency = 'USD
 
   // Step navigation
   const nextStep = () => {
-    if (currentStep < 6) {
+    if (currentStep < 7) {
       setCurrentStep(currentStep + 1);
       
-      if (currentStep === 5 && mode === 'send') {
-        // Simulate payment processing
-        handleSendPayment();
+      // Auto-send OTP when PIN is entered
+      if (currentStep === 4) {
+        triggerOTP();
       }
     }
   };
@@ -90,6 +102,14 @@ export const SendReceiveModal = ({ isOpen, onClose, mode, defaultCurrency = 'USD
     }
   };
 
+  const triggerOTP = () => {
+    setOtpSent(true);
+    toast({
+      title: "OTP Sent",
+      description: "A 6-digit code has been sent to your phone/email",
+    });
+  };
+
   const handleSendPayment = async () => {
     setLoading(true);
     setPaymentStatus('processing');
@@ -98,7 +118,8 @@ export const SendReceiveModal = ({ isOpen, onClose, mode, defaultCurrency = 'USD
       // Simulate API call
       await new Promise(resolve => setTimeout(resolve, 2000));
       
-      const txId = `TX-${Math.random().toString(36).substr(2, 8).toUpperCase()}`;
+      const prefix = mode === 'send' ? 'TX' : 'WD';
+      const txId = `${prefix}-${Math.random().toString(36).substr(2, 8).toUpperCase()}`;
       setTransactionId(txId);
       
       setPaymentStatus('sent');
@@ -114,7 +135,7 @@ export const SendReceiveModal = ({ isOpen, onClose, mode, defaultCurrency = 'USD
           message
         });
       } else {
-        await convertCurrency(currency, 'UGX', parseFloat(amount));
+        await convertCurrency(currency, destinationCurrency, parseFloat(amount));
       }
       
       setCurrentStep(7); // Success step
@@ -134,10 +155,13 @@ export const SendReceiveModal = ({ isOpen, onClose, mode, defaultCurrency = 'USD
     setRecipient('');
     setAmount('');
     setCurrency(defaultCurrency);
+    setDestinationCurrency('UGX');
     setMessage('');
     setChannel('');
     setPin('');
     setOtpCode('');
+    setOtpSent(false);
+    setShowPin(false);
     setTransactionId(null);
     setPaymentStatus('pending');
     setLoading(false);
@@ -156,6 +180,7 @@ export const SendReceiveModal = ({ isOpen, onClose, mode, defaultCurrency = 'USD
       case 3: return amount !== '' && parseFloat(amount) > 0 && parseFloat(amount) <= availableBalance;
       case 4: return true; // Timing is pre-selected
       case 5: return pin.length === 6 && otpCode.length === 6;
+      case 6: return true; // Review step
       default: return true;
     }
   };
@@ -165,10 +190,10 @@ export const SendReceiveModal = ({ isOpen, onClose, mode, defaultCurrency = 'USD
     switch (currentStep) {
       case 1: return `${actionText} - Select Channel`;
       case 2: return `${actionText} - Destination`;
-      case 3: return `${actionText} - Payment Details`;
+      case 3: return `${actionText} - ${mode === 'send' ? 'Payment' : 'Withdrawal'} Details`;
       case 4: return `${actionText} - Timing Estimate`;
       case 5: return `${actionText} - Authentication`;
-      case 6: return `${actionText} - Review & Send`;
+      case 6: return `${actionText} - Review & ${mode === 'send' ? 'Send' : 'Withdraw'}`;
       case 7: return 'Transaction Complete';
       default: return actionText;
     }
@@ -316,101 +341,123 @@ export const SendReceiveModal = ({ isOpen, onClose, mode, defaultCurrency = 'USD
             </div>
           )}
 
-          {/* Step 3: Payment Details */}
+          {/* Step 3: Payment/Withdrawal Details */}
           {currentStep === 3 && (
-            <div className="space-y-4">
-              <div className="text-center">
-                <h3 className="text-lg font-semibold mb-2">Payment Details</h3>
-                <p className="text-muted-foreground text-sm">
-                  Enter the amount and review conversion details
-                </p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Amount</Label>
-                  <Input 
-                    type="number"
-                    placeholder="50.00"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                  />
+            <TooltipProvider>
+              <div className="space-y-4">
+                <div className="text-center">
+                  <h3 className="text-lg font-semibold mb-2">
+                    {mode === 'send' ? 'Payment' : 'Withdrawal'} Details
+                  </h3>
+                  <p className="text-muted-foreground text-sm">
+                    Enter the amount and review conversion details
+                  </p>
                 </div>
-                <div>
-                  <Label>Currency</Label>
-                  <Select value={currency} onValueChange={setCurrency}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {wallets.map((wallet) => (
-                        <SelectItem key={wallet.currency} value={wallet.currency}>
-                          {wallet.currency}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
 
-              {amount && (
-                <>
-                  {/* Auto Conversion Notice */}
-                  <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
-                    <div className="flex items-center gap-2 text-amber-700">
-                      <Info className="h-4 w-4" />
-                      <span className="text-sm font-medium">Currency: {currency} → UGX (auto-converted)</span>
-                    </div>
-                    <p className="text-xs text-amber-600 mt-1">
-                      Exchange rate: 1 {currency} = {conversionInfo.rate.toLocaleString()} UGX
-                    </p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Amount</Label>
+                    <Input 
+                      type="number"
+                      placeholder="50.00"
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                    />
                   </div>
+                  <div>
+                    <Label>{mode === 'send' ? 'From' : 'Wallet'} Currency</Label>
+                    <Select value={currency} onValueChange={setCurrency}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {wallets.map((wallet) => (
+                          <SelectItem key={wallet.currency} value={wallet.currency}>
+                            <div className="flex items-center justify-between w-full">
+                              <span>{wallet.currency}</span>
+                              <Badge variant="secondary" className="ml-2">
+                                {wallet.balance.toFixed(4)}
+                              </Badge>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
 
-                  {/* Fees Display */}
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-base">Transaction Breakdown</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span>Amount ({currency})</span>
-                        <span>{parseFloat(amount).toLocaleString()} {currency}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="flex items-center gap-1">
-                          Fees 
-                          <Info className="h-3 w-3 text-muted-foreground" />
+                {amount && (
+                  <>
+                    {/* Auto Conversion Notice */}
+                    <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
+                      <div className="flex items-center gap-2 text-amber-700">
+                        <Info className="h-4 w-4" />
+                        <span className="text-sm font-medium">
+                          {currency} → {destinationCurrency} (real-time rate: 1 {currency} = {conversionInfo.rate.toLocaleString()} {destinationCurrency})
                         </span>
-                        <span>${conversionInfo.fee.toFixed(2)}</span>
                       </div>
-                      <Separator />
-                      <div className="flex justify-between text-sm">
-                        <span>Converting to UGX</span>
-                        <span>{conversionInfo.ugxAmount.toLocaleString()} UGX</span>
-                      </div>
-                      <div className="flex justify-between font-medium">
-                        <span>Net Received</span>
-                        <span>{conversionInfo.netReceived.toLocaleString()} UGX</span>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </>
-              )}
+                      <p className="text-xs text-amber-600 mt-1">
+                        {mode === 'send' ? 'Converted automatically' : `Will be converted to ${destinationCurrency} at real-time rate`}
+                      </p>
+                    </div>
 
-              {/* Reference Field */}
-              <div>
-                <Label>Reference (Optional)</Label>
-                <Input 
-                  placeholder="Invoice #423"
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value.slice(0, 100))}
-                  maxLength={100}
-                />
-                <div className="text-xs text-muted-foreground mt-1">
-                  {message.length}/100 characters
+                    {/* Fees Display */}
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-base">Transaction Breakdown</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span>Amount ({currency})</span>
+                          <span>{parseFloat(amount).toLocaleString()} {currency}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="flex items-center gap-1">
+                            Fee
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <Info className="h-3 w-3 text-muted-foreground" />
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-xs">
+                                <div className="space-y-1 text-xs">
+                                  <div>Network fee: ${conversionInfo.networkFee.toFixed(2)}</div>
+                                  <div>Processing fee: ${conversionInfo.percentageFee.toFixed(2)} (2.4%)</div>
+                                  <div>Total: ${conversionInfo.fee.toFixed(2)}</div>
+                                </div>
+                              </TooltipContent>
+                            </Tooltip>
+                          </span>
+                          <span>${conversionInfo.fee.toFixed(2)}</span>
+                        </div>
+                        <Separator />
+                        <div className="flex justify-between text-sm">
+                          <span>Final Currency ({destinationCurrency})</span>
+                          <span>{conversionInfo.convertedAmount.toLocaleString()} {destinationCurrency}</span>
+                        </div>
+                        <div className="flex justify-between font-medium">
+                          <span>Net Received</span>
+                          <span>{conversionInfo.netReceived.toLocaleString()} {destinationCurrency}</span>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </>
+                )}
+
+                {/* Reference Field */}
+                <div>
+                  <Label>Reference (Optional)</Label>
+                  <Input 
+                    placeholder={mode === 'send' ? "Invoice #423" : "Business payout"}
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value.slice(0, 100))}
+                    maxLength={100}
+                  />
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {message.length}/100 characters
+                  </div>
                 </div>
               </div>
-            </div>
+            </TooltipProvider>
           )}
 
           {/* Step 4: Timing Estimate */}
@@ -430,7 +477,7 @@ export const SendReceiveModal = ({ isOpen, onClose, mode, defaultCurrency = 'USD
                       <Clock className="h-5 w-5 text-green-600" />
                     </div>
                     <div>
-                      <div className="font-semibold text-green-800">Instant delivery (typically &lt;60s)</div>
+                      <div className="font-semibold text-green-800">Instant delivery (&lt;60s)</div>
                       <div className="text-sm text-green-600">
                         {channel === 'mobile_money' && 'Direct M-Pesa integration'}
                         {channel === 'swift' && 'Real-time bank processing'}
@@ -441,6 +488,19 @@ export const SendReceiveModal = ({ isOpen, onClose, mode, defaultCurrency = 'USD
                   </div>
                 </CardContent>
               </Card>
+
+              {/* Warning for delayed providers */}
+              {channel === 'crypto' && (
+                <div className="p-3 bg-yellow-50 rounded-lg border border-yellow-200">
+                  <div className="flex items-center gap-2 text-yellow-700">
+                    <AlertTriangle className="h-4 w-4" />
+                    <span className="text-sm font-medium">Blockchain delays possible</span>
+                  </div>
+                  <p className="text-xs text-yellow-600 mt-1">
+                    Network congestion may cause delays up to 30 minutes
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
@@ -452,13 +512,28 @@ export const SendReceiveModal = ({ isOpen, onClose, mode, defaultCurrency = 'USD
                 <p className="text-muted-foreground text-sm">
                   Verify your identity to complete the transaction
                 </p>
+                <div className="flex items-center justify-center gap-2 mt-2">
+                  <Shield className="h-4 w-4 text-green-600" />
+                  <span className="text-xs text-green-600 font-medium">Secure & Encrypted</span>
+                </div>
               </div>
 
               <div className="space-y-4">
                 <div>
-                  <Label>Enter PIN</Label>
+                  <Label className="flex items-center justify-between">
+                    Enter 6-digit PIN
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowPin(!showPin)}
+                      className="h-auto p-0"
+                    >
+                      <Eye className="h-3 w-3" />
+                    </Button>
+                  </Label>
                   <Input 
-                    type="password"
+                    type={showPin ? "text" : "password"}
                     placeholder="••••••"
                     value={pin}
                     onChange={(e) => setPin(e.target.value.slice(0, 6))}
@@ -494,9 +569,9 @@ export const SendReceiveModal = ({ isOpen, onClose, mode, defaultCurrency = 'USD
           {currentStep === 6 && (
             <div className="space-y-4">
               <div className="text-center">
-                <h3 className="text-lg font-semibold mb-2">Review & Send</h3>
+                <h3 className="text-lg font-semibold mb-2">Review & {mode === 'send' ? 'Send' : 'Confirm'}</h3>
                 <p className="text-muted-foreground text-sm">
-                  Please review all details before sending
+                  Please review all details before {mode === 'send' ? 'sending' : 'confirming withdrawal'}
                 </p>
               </div>
 
@@ -517,7 +592,7 @@ export const SendReceiveModal = ({ isOpen, onClose, mode, defaultCurrency = 'USD
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Final Currency</span>
-                    <span>UGX</span>
+                    <span>{destinationCurrency}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Fee</span>
@@ -525,7 +600,7 @@ export const SendReceiveModal = ({ isOpen, onClose, mode, defaultCurrency = 'USD
                   </div>
                   <div className="flex justify-between font-semibold text-lg border-t pt-2">
                     <span>Net Received</span>
-                    <span>{conversionInfo.netReceived.toLocaleString()} UGX</span>
+                    <span>{conversionInfo.netReceived.toLocaleString()} {destinationCurrency}</span>
                   </div>
                   {message && (
                     <div className="flex justify-between">
@@ -546,7 +621,9 @@ export const SendReceiveModal = ({ isOpen, onClose, mode, defaultCurrency = 'USD
               </div>
               
               <div>
-                <h3 className="text-lg font-semibold text-green-800 mb-2">✅ Payment Sent Successfully!</h3>
+                <h3 className="text-lg font-semibold text-green-800 mb-2">
+                  ✅ {mode === 'send' ? 'Payment Sent Successfully!' : 'Withdrawal Request Submitted Successfully!'}
+                </h3>
                 <p className="text-muted-foreground">Your transaction has been processed</p>
               </div>
 
@@ -579,19 +656,25 @@ export const SendReceiveModal = ({ isOpen, onClose, mode, defaultCurrency = 'USD
           )}
 
           {/* Navigation Buttons */}
-          {currentStep < 6 && currentStep < 7 && (
+          {currentStep < 7 && (
             <div className="flex gap-3 pt-4">
-              <Button 
-                onClick={nextStep}
-                disabled={!canProceedToNextStep() || loading}
-                className="flex-1"
-              >
-                {currentStep === 5 ? (
-                  loading ? "Processing..." : "Send Now"
-                ) : (
-                  "Continue"
-                )}
-              </Button>
+              {currentStep === 6 ? (
+                <Button 
+                  onClick={handleSendPayment}
+                  disabled={loading}
+                  className="flex-1"
+                >
+                  {loading ? "Processing..." : (mode === 'send' ? "Send Now" : "Withdraw Now")}
+                </Button>
+              ) : (
+                <Button 
+                  onClick={nextStep}
+                  disabled={!canProceedToNextStep() || loading}
+                  className="flex-1"
+                >
+                  Continue
+                </Button>
+              )}
             </div>
           )}
         </div>
