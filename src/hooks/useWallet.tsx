@@ -13,6 +13,18 @@ interface WalletData {
   updated_at: string;
 }
 
+interface WalletCurrencyData {
+  id: string;
+  user_id: string;
+  currency_code: string;
+  balance: number;
+  locked_balance: number;
+  wallet_address?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 interface TransactionData {
   id: string;
   user_id: string;
@@ -26,13 +38,14 @@ interface TransactionData {
 
 export const useWallet = () => {
   const [wallets, setWallets] = useState<WalletData[]>([]);
+  const [walletCurrencies, setWalletCurrencies] = useState<WalletCurrencyData[]>([]);
   const [transactions, setTransactions] = useState<TransactionData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { user } = useAuth();
   const { toast } = useToast();
 
-  // Fetch wallets
+  // Fetch main wallet
   const fetchWallets = async () => {
     if (!user) return;
 
@@ -47,6 +60,62 @@ export const useWallet = () => {
     } catch (err: any) {
       setError(err.message);
       console.error('Error fetching wallets:', err);
+    }
+  };
+
+  // Fetch wallet currencies
+  const fetchWalletCurrencies = async () => {
+    if (!user) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('wallet_currencies')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('is_active', true);
+
+      if (error) throw error;
+      
+      // If no currencies exist, create default ones
+      if (!data || data.length === 0) {
+        await initializeDefaultCurrencies();
+      } else {
+        setWalletCurrencies(data);
+      }
+    } catch (err: any) {
+      setError(err.message);
+      console.error('Error fetching wallet currencies:', err);
+    }
+  };
+
+  // Initialize default currencies for new users
+  const initializeDefaultCurrencies = async () => {
+    if (!user) return;
+
+    const defaultCurrencies = [
+      { currency_code: 'USD', balance: 1000 },
+      { currency_code: 'EUR', balance: 850 },
+      { currency_code: 'BTC', balance: 0.02 }
+    ];
+
+    try {
+      const { data, error } = await supabase
+        .from('wallet_currencies')
+        .insert(
+          defaultCurrencies.map(curr => ({
+            user_id: user.id,
+            currency_code: curr.currency_code,
+            balance: curr.balance,
+            locked_balance: 0,
+            is_active: true
+          }))
+        )
+        .select();
+
+      if (error) throw error;
+      setWalletCurrencies(data || []);
+    } catch (err: any) {
+      console.error('Error initializing default currencies:', err);
     }
   };
 
@@ -81,29 +150,50 @@ export const useWallet = () => {
     if (!user) throw new Error('User not authenticated');
 
     try {
-      const { data, error } = await supabase
+      // Check balance
+      const currency = walletCurrencies.find(w => w.currency_code === payload.currency);
+      if (!currency || currency.balance < payload.amount) {
+        throw new Error(`Insufficient ${payload.currency} balance`);
+      }
+
+      // Create transaction record
+      const { data: transaction, error: txError } = await supabase
         .from('wallet_transactions')
         .insert({
           user_id: user.id,
           type: 'outbound',
           amount: payload.amount,
-          status: 'pending',
-          description: `Payment to ${payload.recipient}: ${payload.message || ''}`
+          currency: payload.currency,
+          status: 'completed',
+          description: `Payment to ${payload.recipient}: ${payload.message || ''}`,
+          reference_id: payload.route
         })
         .select()
         .single();
 
-      if (error) throw error;
+      if (txError) throw txError;
+
+      // Update wallet balance
+      const { error: balanceError } = await supabase
+        .from('wallet_currencies')
+        .update({
+          balance: currency.balance - payload.amount,
+          updated_at: new Date().toISOString()
+        })
+        .eq('user_id', user.id)
+        .eq('currency_code', payload.currency);
+
+      if (balanceError) throw balanceError;
 
       toast({
-        title: "Payment Initiated",
-        description: `Sending ${payload.amount} ${payload.currency} to ${payload.recipient}`,
+        title: "Payment Sent",
+        description: `Sent ${payload.amount} ${payload.currency} to ${payload.recipient}`,
       });
 
       // Refresh data
-      await Promise.all([fetchWallets(), fetchTransactions()]);
+      await Promise.all([fetchWallets(), fetchWalletCurrencies(), fetchTransactions()]);
       
-      return data;
+      return transaction;
     } catch (err: any) {
       toast({
         title: "Payment Failed",
@@ -166,9 +256,78 @@ export const useWallet = () => {
       ETH: 2500 
     };
     
-    return wallets.reduce((sum, wallet) => {
-      return sum + (wallet.balance * (rates[wallet.currency] || 1));
+    return walletCurrencies.reduce((sum, wallet) => {
+      return sum + (wallet.balance * (rates[wallet.currency_code] || 1));
     }, 0);
+  };
+
+  // Get currency balance
+  const getCurrencyBalance = (currencyCode: string): number => {
+    const currency = walletCurrencies.find(c => c.currency_code === currencyCode);
+    return currency?.balance || 0;
+  };
+
+  // Add funds to wallet
+  const addFunds = async (currency: string, amount: number, source: string = 'deposit') => {
+    if (!user) throw new Error('User not authenticated');
+
+    try {
+      // Update or create currency balance
+      const existingCurrency = walletCurrencies.find(c => c.currency_code === currency);
+      
+      if (existingCurrency) {
+        const { error } = await supabase
+          .from('wallet_currencies')
+          .update({
+            balance: existingCurrency.balance + amount,
+            updated_at: new Date().toISOString()
+          })
+          .eq('user_id', user.id)
+          .eq('currency_code', currency);
+          
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('wallet_currencies')
+          .insert({
+            user_id: user.id,
+            currency_code: currency,
+            balance: amount,
+            locked_balance: 0,
+            is_active: true
+          });
+          
+        if (error) throw error;
+      }
+
+      // Create transaction record
+      await supabase
+        .from('wallet_transactions')
+        .insert({
+          user_id: user.id,
+          type: 'inbound',
+          amount: amount,
+          currency: currency,
+          status: 'completed',
+          description: `Added ${amount} ${currency} from ${source}`,
+          reference_id: source
+        });
+
+      toast({
+        title: "Funds Added",
+        description: `Added ${amount} ${currency} to your wallet`,
+      });
+
+      // Refresh data
+      await Promise.all([fetchWalletCurrencies(), fetchTransactions()]);
+    } catch (err: any) {
+      toast({
+        title: "Add Funds Failed",
+        description: err.message,
+        variant: "destructive",
+      });
+      throw err;
+    }
   };
 
   // Real-time subscriptions
@@ -194,6 +353,18 @@ export const useWallet = () => {
         {
           event: '*',
           schema: 'public',
+          table: 'wallet_currencies',
+          filter: `user_id=eq.${user.id}`
+        },
+        () => {
+          fetchWalletCurrencies();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
           table: 'wallet_transactions',
           filter: `user_id=eq.${user.id}`
         },
@@ -212,7 +383,7 @@ export const useWallet = () => {
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
-      await Promise.all([fetchWallets(), fetchTransactions()]);
+      await Promise.all([fetchWallets(), fetchWalletCurrencies(), fetchTransactions()]);
       setLoading(false);
     };
 
@@ -223,12 +394,15 @@ export const useWallet = () => {
 
   return {
     wallets,
+    walletCurrencies,
     transactions,
     loading,
     error,
     sendPayment,
     convertCurrency,
     getTotalValue,
-    refreshData: () => Promise.all([fetchWallets(), fetchTransactions()]),
+    getCurrencyBalance,
+    addFunds,
+    refreshData: () => Promise.all([fetchWallets(), fetchWalletCurrencies(), fetchTransactions()]),
   };
 };

@@ -9,16 +9,16 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useWallet } from "@/hooks/useWallet";
 
 export const DashboardSection = () => {
-  const { wallets, transactions: walletTransactions, getTotalValue } = useWallet();
+  const { walletCurrencies, transactions: walletTransactions, getTotalValue } = useWallet();
 
   // Convert wallet data for WalletOverview component
   const walletData = {
     totalUsdValue: `$${getTotalValue().toLocaleString()}`,
-    currencies: wallets.map(wallet => {
+    currencies: walletCurrencies.map(wallet => {
       const rates: { [key: string]: number } = { USD: 1, EUR: 1.1, GBP: 1.25, BTC: 45000, ETH: 2500 };
-      const usdValue = wallet.balance * (rates[wallet.currency] || 1);
+      const usdValue = wallet.balance * (rates[wallet.currency_code] || 1);
       return {
-        code: wallet.currency,
+        code: wallet.currency_code,
         amount: wallet.balance.toLocaleString(),
         usdValue: `$${usdValue.toLocaleString()}`,
         change24h: `+$${Math.floor(Math.random() * 100)}`,

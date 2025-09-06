@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from './useAuth';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 interface WalletCurrency {
   id: string;
@@ -52,80 +53,99 @@ export const useEnhancedWallet = () => {
   const { user } = useAuth();
   const { toast } = useToast();
 
-  // Initialize demo data
+  // Fetch real data from Supabase
+  const fetchWalletData = async () => {
+    if (!user) return;
+
+    try {
+      setLoading(true);
+      
+      // Fetch wallet currencies
+      const { data: currenciesData, error: currenciesError } = await supabase
+        .from('wallet_currencies')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('is_active', true);
+
+      if (currenciesError) throw currenciesError;
+
+      // Initialize with demo data if no currencies exist
+      if (!currenciesData || currenciesData.length === 0) {
+        await initializeDemoData();
+        return;
+      }
+
+      setWalletCurrencies(currenciesData);
+      
+      // Fetch transactions
+      const { data: transactionsData, error: transactionsError } = await supabase
+        .from('enhanced_wallet_transactions')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (transactionsError) throw transactionsError;
+      setTransactions(transactionsData || []);
+      
+      setLoading(false);
+    } catch (err: any) {
+      setError(err.message);
+      setLoading(false);
+    }
+  };
+
+  // Initialize demo data for new users
   const initializeDemoData = async () => {
     if (!user) return;
 
     try {
       // Demo wallet currencies
-      const demoCurrencies: WalletCurrency[] = [
+      const demoCurrencies = [
         {
-          id: 'usd-wallet',
           user_id: user.id,
           currency_code: 'USD',
           balance: 5000,
           locked_balance: 0,
           wallet_address: '0x1234...5678',
           is_active: true,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
         },
         {
-          id: 'eur-wallet',
           user_id: user.id,
           currency_code: 'EUR',
           balance: 3500,
           locked_balance: 0,
           wallet_address: '0x2345...6789',
           is_active: true,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
         },
         {
-          id: 'btc-wallet',
           user_id: user.id,
           currency_code: 'BTC',
           balance: 0.125,
           locked_balance: 0,
           wallet_address: 'bc1qxy2...abc123',
           is_active: true,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
         },
       ];
 
-      // Demo exchange rates
-      const demoRates: ExchangeRate[] = [
-        { from_currency: 'USD', to_currency: 'EUR', rate: 0.85, updated_at: new Date().toISOString(), source: 'demo' },
-        { from_currency: 'USD', to_currency: 'BTC', rate: 0.000022, updated_at: new Date().toISOString(), source: 'demo' },
-        { from_currency: 'EUR', to_currency: 'USD', rate: 1.18, updated_at: new Date().toISOString(), source: 'demo' },
-      ];
+      const { data, error } = await supabase
+        .from('wallet_currencies')
+        .insert(demoCurrencies)
+        .select();
 
-      // Demo transactions
-      const demoTransactions: EnhancedTransaction[] = [
-        {
-          id: 'tx-1',
-          user_id: user.id,
-          from_currency: 'USD',
-          to_currency: 'EUR',
-          from_amount: 1000,
-          to_amount: 850,
-          exchange_rate: 0.85,
-          fee_amount: 5,
-          fee_currency: 'USD',
-          transaction_type: 'conversion',
-          status: 'completed',
-          description: 'Currency conversion',
-          reference_id: 'demo-ref-1',
-          metadata: {},
-          created_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-          updated_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-        },
-      ];
+      if (error) throw error;
 
-      setWalletCurrencies(demoCurrencies);
-      setExchangeRates(demoRates);
-      setTransactions(demoTransactions);
+      setWalletCurrencies(data || []);
+      
+      // Initialize exchange rates if not set
+      if (exchangeRates.length === 0) {
+        setExchangeRates([
+          { from_currency: 'USD', to_currency: 'EUR', rate: 0.85, updated_at: new Date().toISOString(), source: 'system' },
+          { from_currency: 'USD', to_currency: 'BTC', rate: 0.000022, updated_at: new Date().toISOString(), source: 'system' },
+          { from_currency: 'EUR', to_currency: 'USD', rate: 1.18, updated_at: new Date().toISOString(), source: 'system' },
+        ]);
+      }
+      
       setLoading(false);
     } catch (err: any) {
       setError(err.message);
@@ -152,41 +172,63 @@ export const useEnhancedWallet = () => {
     return 1; // Fallback
   };
 
-  // Add funds to wallet (demo implementation)
+  // Add funds to wallet (Supabase implementation)
   const addFunds = async (currency: string, amount: number, source: string = 'demo') => {
     if (!user) throw new Error('User not authenticated');
 
     try {
-      // Update local state for demo
-      setWalletCurrencies(prev => 
-        prev.map(wallet => 
-          wallet.currency_code === currency 
-            ? { ...wallet, balance: wallet.balance + amount }
-            : wallet
-        )
-      );
+      const existingWallet = walletCurrencies.find(w => w.currency_code === currency);
+      
+      if (existingWallet) {
+        // Update existing wallet
+        const { error } = await supabase
+          .from('wallet_currencies')
+          .update({ 
+            balance: existingWallet.balance + amount,
+            updated_at: new Date().toISOString()
+          })
+          .eq('user_id', user.id)
+          .eq('currency_code', currency);
+          
+        if (error) throw error;
+      } else {
+        // Create new wallet currency
+        const { error } = await supabase
+          .from('wallet_currencies')
+          .insert({
+            user_id: user.id,
+            currency_code: currency,
+            balance: amount,
+            locked_balance: 0,
+            is_active: true
+          });
+          
+        if (error) throw error;
+      }
 
-      const newTransaction: EnhancedTransaction = {
-        id: `tx-${Date.now()}`,
-        user_id: user.id,
-        transaction_type: 'deposit',
-        from_amount: amount,
-        from_currency: currency,
-        fee_amount: 0,
-        status: 'completed',
-        description: `Added ${amount} ${currency}`,
-        metadata: { source },
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-
-      setTransactions(prev => [newTransaction, ...prev]);
+      // Create transaction record
+      const { error: txError } = await supabase
+        .from('enhanced_wallet_transactions')
+        .insert({
+          user_id: user.id,
+          transaction_type: 'deposit',
+          from_amount: amount,
+          from_currency: currency,
+          fee_amount: 0,
+          status: 'completed',
+          description: `Added ${amount} ${currency}`,
+          metadata: { source }
+        });
+        
+      if (txError) throw txError;
 
       toast({
         title: "Funds Added",
         description: `Added ${amount} ${currency} to your wallet`,
       });
 
+      // Refresh data
+      await fetchWalletData();
       return { success: true };
     } catch (err: any) {
       toast({
@@ -198,7 +240,7 @@ export const useEnhancedWallet = () => {
     }
   };
 
-  // Convert currency (demo implementation)
+  // Convert currency (Supabase implementation)
   const convertCurrency = async (
     fromCurrency: string,
     toCurrency: string,
@@ -209,44 +251,76 @@ export const useEnhancedWallet = () => {
     try {
       const rate = getExchangeRate(fromCurrency, toCurrency);
       const convertedAmount = amount * rate;
+      
+      const fromWallet = walletCurrencies.find(w => w.currency_code === fromCurrency);
+      if (!fromWallet || fromWallet.balance < amount) {
+        throw new Error(`Insufficient ${fromCurrency} balance`);
+      }
 
-      // Update local state for demo
-      setWalletCurrencies(prev => 
-        prev.map(wallet => {
-          if (wallet.currency_code === fromCurrency) {
-            return { ...wallet, balance: wallet.balance - amount };
-          }
-          if (wallet.currency_code === toCurrency) {
-            return { ...wallet, balance: wallet.balance + convertedAmount };
-          }
-          return wallet;
+      // Update from currency balance
+      const { error: fromError } = await supabase
+        .from('wallet_currencies')
+        .update({ 
+          balance: fromWallet.balance - amount,
+          updated_at: new Date().toISOString()
         })
-      );
+        .eq('user_id', user.id)
+        .eq('currency_code', fromCurrency);
+        
+      if (fromError) throw fromError;
 
-      const newTransaction: EnhancedTransaction = {
-        id: `tx-${Date.now()}`,
-        user_id: user.id,
-        transaction_type: 'conversion',
-        from_currency: fromCurrency,
-        to_currency: toCurrency,
-        from_amount: amount,
-        to_amount: convertedAmount,
-        exchange_rate: rate,
-        fee_amount: 0,
-        status: 'completed',
-        description: `Converted ${amount} ${fromCurrency} to ${convertedAmount.toFixed(4)} ${toCurrency}`,
-        metadata: {},
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
+      // Update or create to currency balance
+      const toWallet = walletCurrencies.find(w => w.currency_code === toCurrency);
+      if (toWallet) {
+        const { error: toError } = await supabase
+          .from('wallet_currencies')
+          .update({ 
+            balance: toWallet.balance + convertedAmount,
+            updated_at: new Date().toISOString()
+          })
+          .eq('user_id', user.id)
+          .eq('currency_code', toCurrency);
+          
+        if (toError) throw toError;
+      } else {
+        const { error: createError } = await supabase
+          .from('wallet_currencies')
+          .insert({
+            user_id: user.id,
+            currency_code: toCurrency,
+            balance: convertedAmount,
+            locked_balance: 0,
+            is_active: true
+          });
+          
+        if (createError) throw createError;
+      }
 
-      setTransactions(prev => [newTransaction, ...prev]);
+      // Create transaction record
+      const { error: txError } = await supabase
+        .from('enhanced_wallet_transactions')
+        .insert({
+          user_id: user.id,
+          transaction_type: 'conversion',
+          from_currency: fromCurrency,
+          to_currency: toCurrency,
+          from_amount: amount,
+          to_amount: convertedAmount,
+          exchange_rate: rate,
+          fee_amount: 0,
+          status: 'completed',
+          description: `Converted ${amount} ${fromCurrency} to ${convertedAmount.toFixed(4)} ${toCurrency}`
+        });
+        
+      if (txError) throw txError;
 
       toast({
         title: "Currency Converted",
         description: `Converted ${amount} ${fromCurrency} to ${convertedAmount.toFixed(4)} ${toCurrency}`,
       });
 
+      // Refresh data
+      await fetchWalletData();
       return { success: true };
     } catch (err: any) {
       toast({
@@ -258,7 +332,7 @@ export const useEnhancedWallet = () => {
     }
   };
 
-  // Send payment (demo implementation)
+  // Send payment (Supabase implementation)
   const sendPayment = async (
     recipientId: string,
     currency: string,
@@ -268,36 +342,46 @@ export const useEnhancedWallet = () => {
     if (!user) throw new Error('User not authenticated');
 
     try {
-      // Update local state for demo
-      setWalletCurrencies(prev => 
-        prev.map(wallet => 
-          wallet.currency_code === currency 
-            ? { ...wallet, balance: wallet.balance - amount }
-            : wallet
-        )
-      );
+      const wallet = walletCurrencies.find(w => w.currency_code === currency);
+      if (!wallet || wallet.balance < amount) {
+        throw new Error(`Insufficient ${currency} balance`);
+      }
 
-      const newTransaction: EnhancedTransaction = {
-        id: `tx-${Date.now()}`,
-        user_id: user.id,
-        transaction_type: 'send',
-        from_amount: amount,
-        from_currency: currency,
-        fee_amount: 0,
-        status: 'completed',
-        description: description || `Sent ${amount} ${currency}`,
-        metadata: { recipientId },
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
+      // Update wallet balance
+      const { error: balanceError } = await supabase
+        .from('wallet_currencies')
+        .update({ 
+          balance: wallet.balance - amount,
+          updated_at: new Date().toISOString()
+        })
+        .eq('user_id', user.id)
+        .eq('currency_code', currency);
+        
+      if (balanceError) throw balanceError;
 
-      setTransactions(prev => [newTransaction, ...prev]);
+      // Create transaction record
+      const { error: txError } = await supabase
+        .from('enhanced_wallet_transactions')
+        .insert({
+          user_id: user.id,
+          transaction_type: 'send',
+          from_amount: amount,
+          from_currency: currency,
+          fee_amount: 0,
+          status: 'completed',
+          description: description || `Sent ${amount} ${currency}`,
+          metadata: { recipientId }
+        });
+        
+      if (txError) throw txError;
 
       toast({
         title: "Payment Sent",
         description: `Sent ${amount} ${currency}`,
       });
 
+      // Refresh data
+      await fetchWalletData();
       return { success: true };
     } catch (err: any) {
       toast({
@@ -325,8 +409,8 @@ export const useEnhancedWallet = () => {
 
   // Initial data fetch
   useEffect(() => {
-    if (user && walletCurrencies.length === 0) {
-      initializeDemoData();
+    if (user) {
+      fetchWalletData();
     }
   }, [user]);
 
@@ -343,6 +427,6 @@ export const useEnhancedWallet = () => {
     getCurrencyBalance,
     getExchangeRate,
     initializeDemoData,
-    refreshData: () => initializeDemoData(),
+    refreshData: () => fetchWalletData(),
   };
 };
