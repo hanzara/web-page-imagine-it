@@ -39,7 +39,7 @@ const Navigation = () => {
     }
   };
 
-  // Main tabs with their subtabs
+  // Main tabs - simplified to 4 core sections
   const mainTabs = [
     {
       id: 'home',
@@ -81,36 +81,6 @@ const Navigation = () => {
         { label: 'Staking', path: '/staking' },
         { label: 'P2P Trading', path: '/p2p-trading' }
       ]
-    },
-    {
-      id: 'wallet',
-      label: 'Smart Wallet',
-      icon: Wallet,
-      path: '/smart-wallet',
-      subtabs: [
-        { label: 'Smart Wallet', path: '/smart-wallet' },
-        { label: 'Mobile Money', path: '/mobile-money' },
-        { label: 'Personal Savings', path: '/personal-savings' }
-      ]
-    },
-    {
-      id: 'community',
-      label: 'Community',
-      icon: Globe,
-      path: '/community-networking',
-      subtabs: [
-        { label: 'Networking', path: '/community-networking' },
-        { label: 'Community Hub', path: '/community-hub' },
-        { label: 'Voting System', path: '/voting-system' },
-        { label: 'Financial Navigator', path: '/financial-navigator' }
-      ]
-    },
-    {
-      id: 'analytics',
-      label: 'Analytics',
-      icon: BarChart3,
-      path: '/analytics',
-      subtabs: []
     }
   ];
 

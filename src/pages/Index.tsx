@@ -2,7 +2,7 @@ import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Users, Plus, Calendar, DollarSign, TrendingUp, PiggyBank, Smartphone, Award, BarChart3, Target, Sparkles } from 'lucide-react';
+import { Users, Plus, Calendar, DollarSign, TrendingUp, PiggyBank, Smartphone, Award, BarChart3, Target, Sparkles, Globe, Settings, Building2, Star } from 'lucide-react';
 import CurrencyDisplay from '@/components/CurrencyDisplay';
 import { useNavigate } from 'react-router-dom';
 
@@ -39,6 +39,18 @@ const Index = () => {
         break;
       case 'mobile-money':
         navigate('/mobile-money');
+        break;
+      case 'chamas':
+        navigate('/chamas');
+        break;
+      case 'community':
+        navigate('/community-hub');
+        break;
+      case 'partner':
+        navigate('/partner-dashboard');
+        break;
+      case 'admin':
+        navigate('/admin-portal');
         break;
       default:
         console.log('Unknown action:', action);
@@ -282,67 +294,106 @@ const Index = () => {
           </Card>
         </div>
 
-        {/* Enhanced Quick Actions */}
-        <Card className="border-0 shadow-lg bg-gradient-to-r from-slate-50 to-blue-50">
-          <CardHeader className="text-center">
-            <CardTitle className="text-2xl flex items-center justify-center gap-2">
-              <Sparkles className="h-6 w-6 text-blue-500" />
-              Quick Actions
-            </CardTitle>
-            <CardDescription className="text-lg">What would you like to do today?</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-              <Button 
-                className="h-24 flex-col gap-3 bg-gradient-to-br from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white border-0 transform hover:scale-105 transition-all duration-200" 
-                onClick={() => handleQuickAction('personal-savings')}
-              >
-                <PiggyBank className="h-8 w-8" />
-                <span className="font-medium">Personal Savings</span>
-              </Button>
-              
-              <Button 
-                className="h-24 flex-col gap-3 bg-gradient-to-br from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white border-0 transform hover:scale-105 transition-all duration-200" 
-                onClick={() => handleQuickAction('smart-wallet')}
-              >
-                <Target className="h-8 w-8" />
-                <span className="font-medium">Smart Wallet</span>
-              </Button>
-              
-              <Button 
-                className="h-24 flex-col gap-3 bg-gradient-to-br from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white border-0 transform hover:scale-105 transition-all duration-200" 
-                onClick={() => handleQuickAction('create-chama')}
-              >
-                <Plus className="h-8 w-8" />
-                <span className="font-medium">Create Chama</span>
-              </Button>
-              
-              <Button 
-                className="h-24 flex-col gap-3 bg-gradient-to-br from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white border-0 transform hover:scale-105 transition-all duration-200" 
-                onClick={() => handleQuickAction('investment')}
-              >
-                <TrendingUp className="h-8 w-8" />
-                <span className="font-medium">Invest</span>
-              </Button>
-              
-              <Button 
-                className="h-24 flex-col gap-3 bg-gradient-to-br from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white border-0 transform hover:scale-105 transition-all duration-200" 
-                onClick={() => handleQuickAction('mobile-money')}
-              >
-                <Smartphone className="h-8 w-8" />
-                <span className="font-medium">Mobile Money</span>
-              </Button>
-              
-              <Button 
-                className="h-24 flex-col gap-3 bg-gradient-to-br from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white border-0 transform hover:scale-105 transition-all duration-200" 
-                onClick={() => handleQuickAction('analytics')}
-              >
-                <BarChart3 className="h-8 w-8" />
-                <span className="font-medium">Analytics</span>
-              </Button>
+        {/* Dashboard Section */}
+        <div className="text-center space-y-6 py-16 relative">
+          <div className="space-y-4">
+            <h2 className="text-5xl font-bold text-foreground">Dashboard</h2>
+            <div className="flex items-center justify-center gap-4">
+              <CurrencyDisplay amount={5000} className="text-6xl font-bold text-kenyan-green" showToggle={false} />
+              <div className="flex items-center text-kenyan-green">
+                <TrendingUp className="h-8 w-8 mr-2" />
+                <span className="text-2xl font-semibold">↗</span>
+              </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
+
+        {/* Dashboard Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-8 max-w-4xl mx-auto mb-16">
+          <Card 
+            className="group cursor-pointer border-0 shadow-lg bg-gradient-to-br from-blue-50 to-blue-100 hover:shadow-xl transition-all duration-300 transform hover:scale-105"
+            onClick={() => handleQuickAction('chamas')}
+          >
+            <CardContent className="p-8 text-center">
+              <div className="flex justify-center mb-4">
+                <div className="p-4 bg-blue-500 rounded-full">
+                  <Users className="h-8 w-8 text-white" />
+                </div>
+              </div>
+              <h3 className="text-xl font-semibold text-blue-900">Chamas</h3>
+            </CardContent>
+          </Card>
+
+          <Card 
+            className="group cursor-pointer border-0 shadow-lg bg-gradient-to-br from-green-50 to-green-100 hover:shadow-xl transition-all duration-300 transform hover:scale-105"
+            onClick={() => handleQuickAction('investment')}
+          >
+            <CardContent className="p-8 text-center">
+              <div className="flex justify-center mb-4">
+                <div className="p-4 bg-green-500 rounded-full">
+                  <TrendingUp className="h-8 w-8 text-white" />
+                </div>
+              </div>
+              <h3 className="text-xl font-semibold text-green-900">Investments</h3>
+            </CardContent>
+          </Card>
+
+          <Card 
+            className="group cursor-pointer border-0 shadow-lg bg-gradient-to-br from-purple-50 to-purple-100 hover:shadow-xl transition-all duration-300 transform hover:scale-105"
+            onClick={() => handleQuickAction('community')}
+          >
+            <CardContent className="p-8 text-center">
+              <div className="flex justify-center mb-4">
+                <div className="p-4 bg-purple-500 rounded-full">
+                  <Globe className="h-8 w-8 text-white" />
+                </div>
+              </div>
+              <h3 className="text-xl font-semibold text-purple-900">Community</h3>
+            </CardContent>
+          </Card>
+
+          <Card 
+            className="group cursor-pointer border-0 shadow-lg bg-gradient-to-br from-orange-50 to-orange-100 hover:shadow-xl transition-all duration-300 transform hover:scale-105"
+            onClick={() => handleQuickAction('analytics')}
+          >
+            <CardContent className="p-8 text-center">
+              <div className="flex justify-center mb-4">
+                <div className="p-4 bg-orange-500 rounded-full">
+                  <BarChart3 className="h-8 w-8 text-white" />
+                </div>
+              </div>
+              <h3 className="text-xl font-semibold text-orange-900">Analytics</h3>
+            </CardContent>
+          </Card>
+
+          <Card 
+            className="group cursor-pointer border-0 shadow-lg bg-gradient-to-br from-teal-50 to-teal-100 hover:shadow-xl transition-all duration-300 transform hover:scale-105"
+            onClick={() => handleQuickAction('partner')}
+          >
+            <CardContent className="p-8 text-center">
+              <div className="flex justify-center mb-4">
+                <div className="p-4 bg-teal-500 rounded-full">
+                  <Building2 className="h-8 w-8 text-white" />
+                </div>
+              </div>
+              <h3 className="text-xl font-semibold text-teal-900">Partner Dashboard</h3>
+            </CardContent>
+          </Card>
+
+          <Card 
+            className="group cursor-pointer border-0 shadow-lg bg-gradient-to-br from-pink-50 to-pink-100 hover:shadow-xl transition-all duration-300 transform hover:scale-105"
+            onClick={() => handleQuickAction('admin')}
+          >
+            <CardContent className="p-8 text-center">
+              <div className="flex justify-center mb-4">
+                <div className="p-4 bg-pink-500 rounded-full">
+                  <Star className="h-8 w-8 text-white" />
+                </div>
+              </div>
+              <h3 className="text-xl font-semibold text-pink-900">Admin Portal</h3>
+            </CardContent>
+          </Card>
+        </div>
 
         {/* Main Content Grid */}
         <div className="grid gap-6 lg:grid-cols-2">
