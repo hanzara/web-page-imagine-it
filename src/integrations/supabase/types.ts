@@ -7671,6 +7671,10 @@ export type Database = {
         Args: { account_id: string }
         Returns: number
       }
+      calculate_savings_interest_batch: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
       calculate_transaction_fee: {
         Args: { p_amount: number; p_transaction_type: string }
         Returns: number
