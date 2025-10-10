@@ -102,17 +102,28 @@ Deno.serve(async (req) => {
       .eq('is_active', true);
 
     if (userChamas && userChamas.length > 0) {
-      dashboardData.activeChamas = userChamas.map((member: any) => ({
-        id: member.chamas.id,
-        name: member.chamas.name,
-        total_savings: member.chamas.total_savings,
-        current_members: member.chamas.current_members,
-        max_members: member.chamas.max_members,
-        contribution_amount: member.chamas.contribution_amount,
-        status: member.chamas.status,
-        user_role: member.role,
-        member_id: member.id,
-      }));
+      // Use Map to deduplicate chamas by ID
+      const chamaMap = new Map();
+      
+      userChamas.forEach((member: any) => {
+        const chamaId = member.chamas.id;
+        // Only add if not already in map, or if this role has higher priority
+        if (!chamaMap.has(chamaId) || member.role === 'admin') {
+          chamaMap.set(chamaId, {
+            id: member.chamas.id,
+            name: member.chamas.name,
+            total_savings: member.chamas.total_savings,
+            current_members: member.chamas.current_members,
+            max_members: member.chamas.max_members,
+            contribution_amount: member.chamas.contribution_amount,
+            status: member.chamas.status,
+            user_role: member.role,
+            member_id: member.id,
+          });
+        }
+      });
+      
+      dashboardData.activeChamas = Array.from(chamaMap.values());
     }
 
     // 4. Get upcoming contributions (next 5)
