@@ -215,16 +215,9 @@ Deno.serve(async (req) => {
 
     dashboardData.notifications = notifications;
 
-    // 7. Get user profile for verification status
-    const { data: profileData } = await supabase
-      .from('user_profiles')
-      .select('verified')
-      .eq('user_id', userId)
-      .maybeSingle();
-
-    // Default values
+    // 7. Set default values (no verified column in user_profiles)
     dashboardData.reputationScore = 75;
-    dashboardData.verified = profileData?.verified || false;
+    dashboardData.verified = false;
 
     console.log('Dashboard data compiled successfully');
 
