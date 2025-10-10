@@ -3,15 +3,71 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Plus, Users, DollarSign, Calendar, Search, TrendingUp } from 'lucide-react';
+import { Plus, Users, DollarSign, Calendar, Search, TrendingUp, Trash2 } from 'lucide-react';
 import { useChamas } from '@/hooks/useChamas';
 import { CreateChamaModal } from '@/components/chama/CreateChamaModal';
 import Navigation from '@/components/Navigation';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
+import { useToast } from '@/hooks/use-toast';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const ChamasPage: React.FC = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const { data: chamas, isLoading } = useChamas();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [chamaToDelete, setChamaToDelete] = useState<any>(null);
+
+  const deleteChamaMutation = useMutation({
+    mutationFn: async (chamaId: string) => {
+      const { data, error } = await supabase.rpc('delete_chama', {
+        p_chama_id: chamaId
+      });
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      toast({
+        title: "Chama Deleted",
+        description: "The chama has been successfully deleted.",
+      });
+      queryClient.invalidateQueries({ queryKey: ['chamas'] });
+      setDeleteDialogOpen(false);
+      setChamaToDelete(null);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete chama",
+        variant: "destructive",
+      });
+    }
+  });
+
+  const handleDeleteClick = (e: React.MouseEvent, chama: any) => {
+    e.stopPropagation();
+    setChamaToDelete(chama);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (chamaToDelete) {
+      deleteChamaMutation.mutate(chamaToDelete.id);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-muted/20 to-background">
@@ -47,13 +103,26 @@ const ChamasPage: React.FC = () => {
               <Card key={chama.id} className="hover:shadow-lg transition-shadow">
                 <CardHeader>
                   <div className="flex items-start justify-between">
-                    <div>
+                    <div className="flex-1">
                       <CardTitle className="text-xl mb-2">{chama.name}</CardTitle>
                       <CardDescription>{chama.description}</CardDescription>
                     </div>
-                    <Badge variant={chama.status === 'active' ? 'default' : 'secondary'}>
-                      {chama.status}
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge variant={chama.status === 'active' ? 'default' : 'secondary'}>
+                        {chama.status}
+                      </Badge>
+                      {chama.userRole === 'admin' && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={(e) => handleDeleteClick(e, chama)}
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                          disabled={deleteChamaMutation.isPending}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -116,6 +185,27 @@ const ChamasPage: React.FC = () => {
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
       />
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Chama</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{chamaToDelete?.name}"? This action cannot be undone and will remove all chama data including contributions, loans, and transactions.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              className="bg-destructive hover:bg-destructive/90"
+              disabled={deleteChamaMutation.isPending}
+            >
+              {deleteChamaMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
