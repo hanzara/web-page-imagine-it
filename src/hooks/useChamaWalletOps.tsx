@@ -17,11 +17,21 @@ export const useChamaWalletOps = () => {
 
   return useMutation({
     mutationFn: async (params: WalletOperation) => {
-      const { data, error } = await supabase.functions.invoke('chama-wallet-ops', {
+      console.log('Invoking wallet operation:', params);
+      
+      const { data, error } = await supabase.functions.invoke('chama-wallet-operations', {
         body: params
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Wallet operation error:', error);
+        throw error;
+      }
+      
+      if (!data.success) {
+        throw new Error(data.error || 'Operation failed');
+      }
+      
       return data;
     },
     onSuccess: (data, variables) => {

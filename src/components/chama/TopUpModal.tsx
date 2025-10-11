@@ -25,16 +25,22 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
 
   const handleTopUp = () => {
     const amountNum = parseFloat(amount);
-    if (isNaN(amountNum) || amountNum <= 0) return;
-    if (amountNum > savingsBalance) return;
+    
+    if (isNaN(amountNum) || amountNum <= 0) {
+      return;
+    }
+    
+    if (amountNum > savingsBalance) {
+      return;
+    }
 
     performOperation({
       operation: 'topup',
       chamaId,
-      amount: amountNum,
-      walletType: 'mgr'
+      amount: amountNum
     }, {
-      onSuccess: () => {
+      onSuccess: (data) => {
+        console.log('Top-up successful:', data);
         onOpenChange(false);
         setAmount('');
       }

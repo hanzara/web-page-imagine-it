@@ -105,63 +105,26 @@ Deno.serve(async (req) => {
 });
 
 async function handleTopUp(supabase: any, member: any, amount: number) {
-  console.log('Processing top-up:', amount);
+  console.log('Processing top-up from savings to MGR:', amount);
   
-  // Verify Paystack balance by checking recent successful transactions
-  const { data: recentPayment, error: paymentError } = await supabase
-    .from('mpesa_transactions')
-    .select('*')
-    .eq('user_id', member.user_id)
-    .eq('status', 'success')
-    .eq('transaction_type', 'paystack')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .single();
-
-  if (paymentError || !recentPayment) {
-    throw new Error('No recent Paystack payment found. Please make a payment first.');
+  // Check savings balance
+  if (member.savings_balance < amount) {
+    throw new Error(`Insufficient savings balance. Available: KES ${member.savings_balance.toFixed(2)}`);
   }
 
-  // Check if payment amount is sufficient
-  if (recentPayment.amount < amount) {
-    throw new Error(`Insufficient Paystack balance. Available: ${recentPayment.amount}`);
-  }
-
-  // Get central wallet
-  const { data: centralWallet, error: walletError } = await supabase
-    .from('user_central_wallets')
-    .select('balance')
-    .eq('user_id', member.user_id)
-    .single();
-
-  if (walletError || !centralWallet) {
-    throw new Error('Central wallet not found');
-  }
-
-  if (centralWallet.balance < amount) {
-    throw new Error(`Insufficient balance. Available: ${centralWallet.balance}. Please top up via Paystack first.`);
-  }
-
-  // Deduct from central wallet
+  // Deduct from savings balance
   const { error: deductError } = await supabase
-    .from('user_central_wallets')
-    .update({ 
-      balance: centralWallet.balance - amount,
-      updated_at: new Date().toISOString()
-    })
-    .eq('user_id', member.user_id);
-
-  if (deductError) throw deductError;
-
-  // Add to MGR balance
-  const { error: updateError } = await supabase
     .from('chama_members')
     .update({ 
+      savings_balance: member.savings_balance - amount,
       mgr_balance: member.mgr_balance + amount
     })
     .eq('id', member.id);
 
-  if (updateError) throw updateError;
+  if (deductError) {
+    console.error('Error updating balances:', deductError);
+    throw new Error('Failed to transfer funds');
+  }
 
   // Log audit trail
   await supabase.from('chama_audit_trail').insert({
@@ -170,17 +133,29 @@ async function handleTopUp(supabase: any, member: any, amount: number) {
     action: 'topup_mgr_wallet',
     amount: amount,
     details: { 
-      from: 'central_wallet', 
-      to: 'mgr_wallet',
-      paystack_verified: true,
-      payment_reference: recentPayment.checkout_request_id
+      from: 'savings_balance', 
+      to: 'mgr_balance',
+      previous_savings: member.savings_balance,
+      previous_mgr: member.mgr_balance,
+      new_savings: member.savings_balance - amount,
+      new_mgr: member.mgr_balance + amount
     }
+  });
+
+  // Create activity log
+  await supabase.from('chama_activities').insert({
+    chama_id: member.chama_id,
+    member_id: member.id,
+    activity_type: 'wallet_topup',
+    description: `Transferred KES ${amount} from savings to MGR wallet`,
+    amount: amount
   });
 
   return { 
     success: true, 
-    message: `Successfully topped up ${amount} to MGR wallet from Paystack-verified balance`, 
-    newBalance: member.mgr_balance + amount 
+    message: `Successfully topped up KES ${amount} to MGR wallet`, 
+    newMgrBalance: member.mgr_balance + amount,
+    newSavingsBalance: member.savings_balance - amount
   };
 }
 
