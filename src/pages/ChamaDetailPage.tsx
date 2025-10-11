@@ -24,6 +24,7 @@ import { useCSVExportChama } from '@/hooks/useCSVExportChama';
 import { useChamaLoans } from '@/hooks/useChamaLoans';
 import { AnnouncementsPanel } from '@/components/chama/AnnouncementsPanel';
 import { AnnouncementComposer } from '@/components/chama/AnnouncementComposer';
+import ReportsStatements from '@/components/chama/ReportsStatements';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -194,7 +195,7 @@ const ChamaDetailPage: React.FC = () => {
 
         {/* Main Content Tabs */}
         <Tabs defaultValue="dashboard" className="w-full">
-          <TabsList className="grid w-full grid-cols-8 bg-white/50 backdrop-blur-sm">
+          <TabsList className="grid w-full grid-cols-9 bg-white/50 backdrop-blur-sm">
             <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
             <TabsTrigger value="wallet">
               <WalletIcon className="h-4 w-4 mr-2" />
@@ -204,6 +205,7 @@ const ChamaDetailPage: React.FC = () => {
             <TabsTrigger value="invite">Invite</TabsTrigger>
             <TabsTrigger value="contributions">Contributions</TabsTrigger>
             <TabsTrigger value="loans">Loans</TabsTrigger>
+            <TabsTrigger value="reports">Reports</TabsTrigger>
             <TabsTrigger value="announcements">Announcements</TabsTrigger>
             <TabsTrigger value="settings">Settings</TabsTrigger>
           </TabsList>
@@ -336,6 +338,10 @@ const ChamaDetailPage: React.FC = () => {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="reports" className="space-y-4">
+            <ReportsStatements chamaData={chama} />
           </TabsContent>
 
           <TabsContent value="settings" className="space-y-4">

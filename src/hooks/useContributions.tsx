@@ -25,9 +25,13 @@ export const useContributions = (chamaId: string) => {
       return data;
     },
     onSuccess: () => {
+      // Invalidate all related queries to refresh data
       queryClient.invalidateQueries({ queryKey: ['chama-members', chamaId] });
       queryClient.invalidateQueries({ queryKey: ['chama-contributions', chamaId] });
       queryClient.invalidateQueries({ queryKey: ['chama-leaderboard', chamaId] });
+      queryClient.invalidateQueries({ queryKey: ['chamas'] }); // Refresh chama list
+      queryClient.invalidateQueries({ queryKey: ['user-chamas'] }); // Refresh user's chamas
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] }); // Refresh dashboard
       toast({
         title: '🎉 Contribution Made!',
         description: 'Your contribution has been recorded successfully'

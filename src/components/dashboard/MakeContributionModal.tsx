@@ -10,6 +10,7 @@ import { useChamas } from '@/hooks/useChamas';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface MakeContributionModalProps {
   isOpen: boolean;
@@ -30,6 +31,7 @@ export const MakeContributionModal: React.FC<MakeContributionModalProps> = ({
 
   const { user } = useAuth();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const { data: chamas, isLoading: loadingChamas } = useChamas();
 
   // Filter active chamas
@@ -78,6 +80,13 @@ export const MakeContributionModal: React.FC<MakeContributionModalProps> = ({
         title: "Contribution Successful! 🎉",
         description: `You contributed KES ${contributionAmount} to ${selectedChama?.name}`,
       });
+
+      // Invalidate queries to refresh data across the app
+      queryClient.invalidateQueries({ queryKey: ['chama-members', selectedChamaId] });
+      queryClient.invalidateQueries({ queryKey: ['chama-leaderboard', selectedChamaId] });
+      queryClient.invalidateQueries({ queryKey: ['chamas'] });
+      queryClient.invalidateQueries({ queryKey: ['user-chamas'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
 
       // Reset form
       setSelectedChamaId('');
