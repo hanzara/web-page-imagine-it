@@ -1,0 +1,4 @@
+project_id = "yrywjbxqlqpdzrudfupm"
+
+[functions.send-sms-invitation]
+verify_jwt = true
