@@ -148,14 +148,41 @@ export const useChamaWallet = () => {
     amount: number;
     description?: string;
   }) => {
+    // Calculate platform fee for chama contribution
+    const { data: feeData, error: feeError } = await supabase.rpc('calculate_transaction_fee', {
+      p_transaction_type: 'chama_contribution',
+      p_amount: contributionData.amount
+    });
+
+    if (feeError) {
+      console.error('Fee calculation error:', feeError);
+    }
+
+    const fee = Number(feeData || 0);
+    const totalCost = contributionData.amount + fee;
+
     const result = await walletMutation.mutateAsync({
       action: 'contribute_to_chama',
-      ...contributionData
+      ...contributionData,
+      fee,
+      total_cost: totalCost
     });
+
+    // Record the fee
+    if (fee > 0) {
+      await supabase
+        .from('transaction_fees')
+        .insert({
+          transaction_type: 'chama_contribution',
+          amount: contributionData.amount,
+          fee_amount: fee,
+          user_id: user?.id
+        });
+    }
 
     toast({
       title: "Contribution Successful! 💸",
-      description: `KES ${contributionData.amount} contributed to chama.`
+      description: `KES ${contributionData.amount} contributed (Fee: KES ${fee}).`
     });
 
     return result;
