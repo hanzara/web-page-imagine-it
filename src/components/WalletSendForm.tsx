@@ -237,7 +237,7 @@ export const WalletSendForm = () => {
               </Alert>
             )}
 
-            {/* Send Button */}
+            {/* Pay to Send Button */}
             <Button
               type="button"
               onClick={handleSendClick}
@@ -253,10 +253,16 @@ export const WalletSendForm = () => {
               ) : (
                 <>
                   <Send className="mr-2 h-4 w-4" />
-                  Send
+                  Pay KES {totalCost.toFixed(2)} to Send
                 </>
               )}
             </Button>
+            
+            {numericAmount > 0 && (
+              <p className="text-xs text-center text-muted-foreground">
+                Includes KES {transactionFee.toFixed(2)} transaction fee
+              </p>
+            )}
           </>
         ) : (
           <>
