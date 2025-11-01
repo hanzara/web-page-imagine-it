@@ -104,9 +104,48 @@ serve(async (req) => {
     let recipientCode;
     
     if (paymentMethod === 'mpesa' || paymentMethod === 'airtel') {
-      // Get the appropriate bank code for mobile money
-      const bankCode = paymentMethod === 'mpesa' ? 'MPKE' : 'AIKE'; // M-Pesa Kenya or Airtel Kenya
+      // First, fetch the list of mobile money providers to get the correct bank code
+      const banksResponse = await fetch('https://api.paystack.co/bank?currency=KES&type=mobile_money', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${paystackSecretKey}`,
+        },
+      });
+
+      const banksData = await banksResponse.json();
       
+      if (!banksResponse.ok || !banksData.status) {
+        console.error('Failed to fetch banks:', banksData);
+        return new Response(
+          JSON.stringify({ 
+            error: 'Failed to fetch mobile money providers',
+            success: false 
+          }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Find the correct provider based on payment method
+      // M-Pesa is usually Safaricom, Airtel is Airtel Money
+      const providerName = paymentMethod === 'mpesa' ? 'safaricom' : 'airtel';
+      const provider = banksData.data.find((bank: any) => 
+        bank.name.toLowerCase().includes(providerName) || 
+        bank.slug.toLowerCase().includes(providerName)
+      );
+
+      if (!provider) {
+        console.error('Provider not found:', { paymentMethod, providers: banksData.data });
+        return new Response(
+          JSON.stringify({ 
+            error: `${paymentMethod.toUpperCase()} provider not available`,
+            success: false 
+          }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      console.log('Using provider:', provider);
+
       // Create mobile money recipient
       const recipientResponse = await fetch('https://api.paystack.co/transferrecipient', {
         method: 'POST',
@@ -118,7 +157,7 @@ serve(async (req) => {
           type: 'mobile_money',
           name: user.email || 'User',
           account_number: destinationDetails.phone_number,
-          bank_code: bankCode,
+          bank_code: provider.code,
           currency: 'KES',
           metadata: {
             provider: paymentMethod,
