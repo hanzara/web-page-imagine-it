@@ -104,6 +104,9 @@ serve(async (req) => {
     let recipientCode;
     
     if (paymentMethod === 'mpesa' || paymentMethod === 'airtel') {
+      // Get the appropriate bank code for mobile money
+      const bankCode = paymentMethod === 'mpesa' ? 'MPKE' : 'AIKE'; // M-Pesa Kenya or Airtel Kenya
+      
       // Create mobile money recipient
       const recipientResponse = await fetch('https://api.paystack.co/transferrecipient', {
         method: 'POST',
@@ -115,6 +118,7 @@ serve(async (req) => {
           type: 'mobile_money',
           name: user.email || 'User',
           account_number: destinationDetails.phone_number,
+          bank_code: bankCode,
           currency: 'KES',
           metadata: {
             provider: paymentMethod,
