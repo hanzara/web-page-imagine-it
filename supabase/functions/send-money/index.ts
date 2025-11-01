@@ -112,28 +112,31 @@ serve(async (req) => {
 
     console.log('Transaction details:', { amount, transactionFee, totalAmount });
 
-    // Get sender's wallet
-    const { data: senderWallet, error: senderWalletError } = await supabaseClient
-      .from('user_central_wallets')
-      .select('*')
-      .eq('user_id', senderId)
-      .single();
+    // Use secure RPC to perform the atomic transfer with admin privileges (bypasses RLS safely)
+    const { data: transferResult, error: transferError } = await supabaseAdmin.rpc('transfer_funds', {
+      p_sender_id: user.id,
+      p_receiver_id: recipientId,
+      p_amount: amount,
+      p_fee: transactionFee
+    });
 
-    if (senderWalletError || !senderWallet) {
-      console.error('Sender wallet error:', senderWalletError);
+    if (transferError) {
+      console.error('Transfer RPC error:', transferError);
       return new Response(
-        JSON.stringify({ error: 'Sender wallet not found' }),
+        JSON.stringify({ error: 'Transfer failed', details: transferError.message }),
         { 
-          status: 404, 
+          status: 500, 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
         }
       );
     }
 
-    if (senderWallet.balance < totalAmount) {
+    if (!transferResult?.success) {
       return new Response(
         JSON.stringify({ 
-          error: `Insufficient balance. You need KES ${totalAmount.toFixed(2)} (Amount: ${amount} + Fee: ${transactionFee.toFixed(2)})` 
+          success: false, 
+          error: transferResult?.error || 'Transfer failed',
+          balance: transferResult?.balance 
         }),
         { 
           status: 400, 
@@ -142,102 +145,13 @@ serve(async (req) => {
       );
     }
 
-    // Get or create recipient's wallet
-    let { data: recipientWallet, error: recipientWalletError } = await supabaseClient
-      .from('user_central_wallets')
-      .select('*')
-      .eq('user_id', recipientId)
-      .single();
-
-    if (recipientWalletError && recipientWalletError.code !== 'PGRST116') {
-      console.error('Recipient wallet fetch error:', recipientWalletError);
-      return new Response(
-        JSON.stringify({ error: 'Failed to access recipient wallet' }),
-        { 
-          status: 500, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      );
-    }
-
-    if (!recipientWallet) {
-      // Create recipient wallet if it doesn't exist using admin client
-      const { data: newWallet, error: createError } = await supabaseAdmin
-        .from('user_central_wallets')
-        .insert([{ user_id: recipientId, balance: 0 }])
-        .select()
-        .single();
-
-      if (createError) {
-        console.error('Recipient wallet creation error:', createError);
-        return new Response(
-          JSON.stringify({ error: 'Failed to create recipient wallet' }),
-          { 
-            status: 500, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-          }
-        );
-      }
-      recipientWallet = newWallet;
-    }
-
     const transactionRef = `TXN${Date.now()}${Math.floor(Math.random() * 1000)}`;
 
-    // Update sender's wallet (deduct total amount including fee)
-    const { error: senderUpdateError } = await supabaseClient
-      .from('user_central_wallets')
-      .update({ 
-        balance: senderWallet.balance - totalAmount,
-        updated_at: new Date().toISOString()
-      })
-      .eq('user_id', senderId);
-
-    if (senderUpdateError) {
-      console.error('Sender wallet update error:', senderUpdateError);
-      return new Response(
-        JSON.stringify({ error: 'Failed to process payment' }),
-        { 
-          status: 500, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      );
-    }
-
-    // Update recipient's wallet (add amount only, not fee)
-    const { error: recipientUpdateError } = await supabaseClient
-      .from('user_central_wallets')
-      .update({ 
-        balance: recipientWallet.balance + amount,
-        updated_at: new Date().toISOString()
-      })
-      .eq('user_id', recipientId);
-
-    if (recipientUpdateError) {
-      console.error('Recipient wallet update error:', recipientUpdateError);
-      
-      // Rollback sender's wallet
-      await supabaseClient
-        .from('user_central_wallets')
-        .update({ 
-          balance: senderWallet.balance,
-          updated_at: new Date().toISOString()
-        })
-        .eq('user_id', senderId);
-
-      return new Response(
-        JSON.stringify({ error: 'Failed to complete transfer' }),
-        { 
-          status: 500, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      );
-    }
-
-    // Record sender's transaction
+    // Record sender's transaction (best-effort)
     const { error: senderTransactionError } = await supabaseClient
       .from('wallet_transactions')
       .insert([{
-        user_id: senderId,
+        user_id: user.id,
         type: 'transfer_out',
         amount: -amount,
         description: description || `Sent to ${recipientEmail}`,
@@ -246,7 +160,11 @@ serve(async (req) => {
         recipient_id: recipientId
       }]);
 
-    // Record recipient's transaction
+    if (senderTransactionError) {
+      console.error('Sender transaction record error:', senderTransactionError);
+    }
+
+    // Record recipient's transaction (best-effort; may fail due to RLS, which is acceptable)
     const { error: recipientTransactionError } = await supabaseClient
       .from('wallet_transactions')
       .insert([{
@@ -256,22 +174,20 @@ serve(async (req) => {
         description: description || `Received from ${user.email}`,
         status: 'completed',
         reference_id: transactionRef,
-        sender_id: senderId
+        sender_id: user.id
       }]);
 
-    if (senderTransactionError || recipientTransactionError) {
-      console.error('Transaction record error:', { senderTransactionError, recipientTransactionError });
-      // Don't return error here as money was already transferred
+    if (recipientTransactionError) {
+      console.error('Recipient transaction record error:', recipientTransactionError);
     }
 
-    console.log('Send money completed:', { 
-      senderId, 
+    console.log('Send money completed (RPC):', { 
+      senderId: user.id, 
       recipientId, 
       amount,
       transactionFee,
       totalAmount,
-      senderNewBalance: senderWallet.balance - totalAmount,
-      recipientNewBalance: recipientWallet.balance + amount
+      remaining_balance: transferResult.remaining_balance
     });
 
     return new Response(
@@ -283,7 +199,7 @@ serve(async (req) => {
         totalAmount: totalAmount,
         recipientEmail,
         transactionReference: transactionRef,
-        newBalance: senderWallet.balance - totalAmount
+        newBalance: transferResult.remaining_balance
       }),
       { 
         status: 200, 
