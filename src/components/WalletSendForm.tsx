@@ -101,17 +101,17 @@ export const WalletSendForm = () => {
     setIsLoading(true);
     
     try {
-      // First, find recipient user ID by email
-      const { data: { users }, error: listError } = await supabase.auth.admin.listUsers();
+      // Find recipient user ID by email using RPC function
+      const { data: recipientId, error: lookupError } = await supabase.rpc('find_user_by_email', {
+        p_email: recipientEmail
+      });
       
-      if (listError) {
-        // If admin access fails, try via RPC or show error
+      if (lookupError) {
+        console.error('User lookup error:', lookupError);
         throw new Error('Unable to find recipient. Please try again.');
       }
 
-      const recipient = users?.find(u => u.email?.toLowerCase() === recipientEmail.toLowerCase());
-      
-      if (!recipient) {
+      if (!recipientId) {
         toast({
           title: "Recipient Not Found",
           description: `No user found with email: ${recipientEmail}`,
@@ -120,7 +120,7 @@ export const WalletSendForm = () => {
         return;
       }
 
-      if (recipient.id === user.id) {
+      if (recipientId === user.id) {
         toast({
           title: "Invalid Transaction",
           description: "You cannot send money to yourself",
@@ -132,7 +132,7 @@ export const WalletSendForm = () => {
       // Call atomic transfer RPC function directly
       const { data, error } = await supabase.rpc('atomic_wallet_transfer', {
         p_sender_id: user.id,
-        p_receiver_id: recipient.id,
+        p_receiver_id: recipientId,
         p_amount: numericAmount,
         p_fee: transactionFee,
         p_description: description.trim() || `Transfer to ${recipientEmail}`

@@ -8625,6 +8625,7 @@ export type Database = {
         Returns: Json
       }
       expire_old_pending_purchases: { Args: never; Returns: undefined }
+      find_user_by_email: { Args: { p_email: string }; Returns: string }
       generate_monthly_maintenance_fees: { Args: never; Returns: number }
       generate_referral_code: { Args: never; Returns: string }
       generate_repayment_schedule: {
