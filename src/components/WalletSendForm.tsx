@@ -89,37 +89,88 @@ export const WalletSendForm = () => {
   };
 
   const handleConfirmSend = async () => {
+    if (!user) {
+      toast({
+        title: "Error",
+        description: "You must be logged in to send money",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsLoading(true);
     
     try {
-      const { data, error } = await supabase.functions.invoke('wallet-transfer', {
-        body: {
-          recipientEmail,
-          amount: numericAmount,
-          description: description.trim() || undefined,
-        }
-      });
-
-      if (error) throw error;
+      // First, find recipient user ID by email
+      const { data: { users }, error: listError } = await supabase.auth.admin.listUsers();
       
-      if (!data?.success) {
-        if (data?.error === 'Insufficient balance') {
-          toast({
-            title: "Insufficient Balance",
-            description: "Please top up your wallet to complete this transaction.",
-            variant: "destructive",
-          });
-          return;
-        }
-        throw new Error(data?.error || 'Transfer failed');
+      if (listError) {
+        // If admin access fails, try via RPC or show error
+        throw new Error('Unable to find recipient. Please try again.');
       }
 
-      // Refresh wallet balance
+      const recipient = users?.find(u => u.email?.toLowerCase() === recipientEmail.toLowerCase());
+      
+      if (!recipient) {
+        toast({
+          title: "Recipient Not Found",
+          description: `No user found with email: ${recipientEmail}`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (recipient.id === user.id) {
+        toast({
+          title: "Invalid Transaction",
+          description: "You cannot send money to yourself",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Call atomic transfer RPC function directly
+      const { data, error } = await supabase.rpc('atomic_wallet_transfer', {
+        p_sender_id: user.id,
+        p_receiver_id: recipient.id,
+        p_amount: numericAmount,
+        p_fee: transactionFee,
+        p_description: description.trim() || `Transfer to ${recipientEmail}`
+      });
+
+      if (error) {
+        console.error('RPC error:', error);
+        throw new Error(error.message || 'Transfer failed');
+      }
+
+      // Parse JSON response
+      const result = typeof data === 'string' ? JSON.parse(data) : data;
+
+      if (!result?.success) {
+        if (result?.error?.includes('Insufficient balance')) {
+          toast({
+            title: "Insufficient Balance",
+            description: `You need KES ${totalCost.toFixed(2)} but only have KES ${result.balance?.toFixed(2) || walletBalance.toFixed(2)}`,
+            variant: "destructive",
+          });
+        } else if (result?.error?.includes('Duplicate transaction')) {
+          toast({
+            title: "Duplicate Transaction",
+            description: "This transaction was recently processed. Please wait before retrying.",
+            variant: "destructive",
+          });
+        } else {
+          throw new Error(result?.error || 'Transfer failed');
+        }
+        return;
+      }
+
+      // Refresh wallet balance from database
       await queryClient.invalidateQueries({ queryKey: ['user-wallet'] });
 
       toast({
         title: "✅ Transaction Successful!",
-        description: `KES ${numericAmount.toLocaleString()} sent to ${recipientEmail}. Remaining balance: KES ${data.remaining_balance.toFixed(2)}`,
+        description: `KES ${result.amount_sent.toLocaleString()} sent to ${recipientEmail}. Fee: KES ${result.fee.toFixed(2)}. New balance: KES ${result.remaining_balance.toFixed(2)}`,
       });
 
       // Reset form
@@ -130,8 +181,8 @@ export const WalletSendForm = () => {
     } catch (error: any) {
       console.error('Send money error:', error);
       toast({
-        title: "Error",
-        description: error.message || "Failed to send money",
+        title: "Transaction Failed",
+        description: error.message || "Failed to complete transaction. Please try again.",
         variant: "destructive",
       });
     } finally {

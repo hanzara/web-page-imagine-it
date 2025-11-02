@@ -7776,7 +7776,9 @@ export type Database = {
           metadata: Json | null
           payment_method: string | null
           payment_reference: string | null
+          receiver_id: string | null
           reference_number: string | null
+          sender_id: string | null
           status: string | null
           type: string
           updated_at: string | null
@@ -7795,7 +7797,9 @@ export type Database = {
           metadata?: Json | null
           payment_method?: string | null
           payment_reference?: string | null
+          receiver_id?: string | null
           reference_number?: string | null
+          sender_id?: string | null
           status?: string | null
           type: string
           updated_at?: string | null
@@ -7814,7 +7818,9 @@ export type Database = {
           metadata?: Json | null
           payment_method?: string | null
           payment_reference?: string | null
+          receiver_id?: string | null
           reference_number?: string | null
+          sender_id?: string | null
           status?: string | null
           type?: string
           updated_at?: string | null
@@ -8468,6 +8474,16 @@ export type Database = {
           p_chama_id: string
           p_credential_type: string
           p_credential_value: string
+        }
+        Returns: Json
+      }
+      atomic_wallet_transfer: {
+        Args: {
+          p_amount: number
+          p_description?: string
+          p_fee: number
+          p_receiver_id: string
+          p_sender_id: string
         }
         Returns: Json
       }
