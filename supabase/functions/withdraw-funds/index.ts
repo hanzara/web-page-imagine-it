@@ -125,13 +125,19 @@ serve(async (req) => {
         );
       }
 
-      // Find the correct provider based on payment method
-      // M-Pesa is usually Safaricom, Airtel is Airtel Money
-      const providerName = paymentMethod === 'mpesa' ? 'safaricom' : 'airtel';
-      const provider = banksData.data.find((bank: any) => 
-        bank.name.toLowerCase().includes(providerName) || 
-        bank.slug.toLowerCase().includes(providerName)
-      );
+      // Find the correct provider based on payment method (robust matching)
+      const provider = banksData.data.find((bank: any) => {
+        const name = (bank.name || '').toLowerCase();
+        const slug = (bank.slug || '').toLowerCase();
+        const code = (bank.code || '').toUpperCase();
+        if (paymentMethod === 'mpesa') {
+          return code === 'MPESA' || name.includes('m-pesa') || name.includes('mpesa') || slug.includes('m-pesa') || slug.includes('mpesa');
+        }
+        if (paymentMethod === 'airtel') {
+          return code === 'ATL_KE' || name.includes('airtel') || slug.includes('airtel');
+        }
+        return false;
+      });
 
       if (!provider) {
         console.error('Provider not found:', { paymentMethod, providers: banksData.data });
@@ -146,6 +152,15 @@ serve(async (req) => {
 
       console.log('Using provider:', provider);
 
+      // Normalize phone to international format without + (e.g., 2547XXXXXXXX)
+      let formattedPhone = String(destinationDetails.phone_number || '').replace(/\s+/g, '');
+      formattedPhone = formattedPhone.replace(/^\+/, '');
+      if (formattedPhone.startsWith('0')) {
+        formattedPhone = '254' + formattedPhone.slice(1);
+      } else if (!formattedPhone.startsWith('254')) {
+        // If it's not starting with 254, assume it's a local number and prefix
+        formattedPhone = '254' + formattedPhone;
+      }
       // Create mobile money recipient
       const recipientResponse = await fetch('https://api.paystack.co/transferrecipient', {
         method: 'POST',
@@ -156,7 +171,7 @@ serve(async (req) => {
         body: JSON.stringify({
           type: 'mobile_money',
           name: user.email || 'User',
-          account_number: destinationDetails.phone_number,
+          account_number: formattedPhone,
           bank_code: provider.code,
           currency: 'KES',
           metadata: {
