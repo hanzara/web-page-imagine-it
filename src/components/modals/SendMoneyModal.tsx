@@ -703,7 +703,7 @@ export const SendMoneyModal: React.FC<SendMoneyModalProps> = ({
                   Verify & Send KES {numericAmount.toLocaleString()}
                 </>
               ) : (
-                <>Pay KES {numericAmount.toLocaleString()}</>
+                <>Send KES {numericAmount.toLocaleString()}</>
               )}
             </Button>
           </div>
