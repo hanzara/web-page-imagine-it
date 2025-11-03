@@ -18,6 +18,7 @@ import { useLinkedAccounts } from '@/hooks/useLinkedAccounts';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useQueryClient } from '@tanstack/react-query';
 import PinVerificationModal from '@/components/PinVerificationModal';
+import { useUserPin } from '@/hooks/useUserPin';
 
 interface SendMoneyModalProps {
   isOpen: boolean;
@@ -40,6 +41,7 @@ export const SendMoneyModal: React.FC<SendMoneyModalProps> = ({
   const { showTransactionNotification } = useTransactionNotification();
   const { initializePayment, isProcessingPayment } = usePaystackIntegration();
   const { linkedAccounts } = useLinkedAccounts();
+  const { verifyPin } = useUserPin();
   
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('wallet');
   const [recipient, setRecipient] = useState('');
@@ -51,7 +53,8 @@ export const SendMoneyModal: React.FC<SendMoneyModalProps> = ({
   const [recipientPhone, setRecipientPhone] = useState('');
   const [email, setEmail] = useState(user?.email || '');
   const [showPinVerification, setShowPinVerification] = useState(false);
-  const [pendingTransfer, setPendingTransfer] = useState<(() => Promise<void>) | null>(null);
+  const [showReceipt, setShowReceipt] = useState(false);
+  const [receiptData, setReceiptData] = useState<any>(null);
 
   const hasLinkedAccounts = (linkedAccounts?.length || 0) > 0;
 
@@ -190,6 +193,20 @@ export const SendMoneyModal: React.FC<SendMoneyModalProps> = ({
       await queryClient.invalidateQueries({ queryKey: ['wallet-transactions'] });
 
       const newBalance = result.remaining_balance;
+      
+      // Show receipt
+      setReceiptData({
+        amount: numericAmount,
+        fee,
+        total: numericAmount + fee,
+        recipient,
+        description: description || `Transfer to ${recipient}`,
+        newBalance,
+        timestamp: new Date().toISOString(),
+        transactionId: result.transaction_id || `TXN${Date.now()}`,
+      });
+      setShowReceipt(true);
+
       showTransactionNotification({
         type: 'p2p_send',
         amount: numericAmount,
@@ -198,14 +215,8 @@ export const SendMoneyModal: React.FC<SendMoneyModalProps> = ({
         newBalance,
       });
 
-      toast({
-        title: "✅ Money Sent!",
-        description: `KES ${numericAmount.toLocaleString()} sent to ${recipient}. Fee: KES ${fee.toFixed(2)}. New balance: KES ${newBalance.toLocaleString()}`,
-      });
-
       resetForm();
       onSuccess?.();
-      onClose();
     } catch (error: any) {
       console.error('Send money error:', error);
       toast({
@@ -218,47 +229,13 @@ export const SendMoneyModal: React.FC<SendMoneyModalProps> = ({
     }
   };
 
-  const handlePinVerified = async () => {
-    setShowPinVerification(false);
-    if (pendingTransfer) {
-      await pendingTransfer();
-      setPendingTransfer(null);
-    }
-  };
-
   const handlePinVerify = async (pin: string): Promise<boolean> => {
-    try {
-      const { data, error } = await supabase
-        .from('user_pins')
-        .select('pin_hash')
-        .eq('user_id', user?.id)
-        .single();
-
-      if (error || !data) {
-        toast({
-          title: "Error",
-          description: "Failed to verify PIN",
-          variant: "destructive",
-        });
-        return false;
-      }
-
-      // Simple PIN verification (in production, use proper hashing)
-      if (data.pin_hash === pin) {
-        await handlePinVerified();
-        return true;
-      } else {
-        toast({
-          title: "Invalid PIN",
-          description: "The PIN you entered is incorrect",
-          variant: "destructive",
-        });
-        return false;
-      }
-    } catch (error) {
-      console.error('PIN verification error:', error);
-      return false;
+    const isValid = await verifyPin(pin);
+    if (isValid) {
+      setShowPinVerification(false);
+      await handleWalletTransfer();
     }
+    return isValid;
   };
 
   const handlePaystackTransfer = async () => {
@@ -352,7 +329,6 @@ export const SendMoneyModal: React.FC<SendMoneyModalProps> = ({
       }
 
       // Request PIN verification before transfer
-      setPendingTransfer(() => handleWalletTransfer);
       setShowPinVerification(true);
     } else {
       // M-Pesa, Airtel, or Card/Bank via Paystack
@@ -732,15 +708,93 @@ export const SendMoneyModal: React.FC<SendMoneyModalProps> = ({
         {/* PIN Verification Modal */}
         <PinVerificationModal
           isOpen={showPinVerification}
-          onClose={() => {
-            setShowPinVerification(false);
-            setPendingTransfer(null);
-          }}
+          onClose={() => setShowPinVerification(false)}
           onVerify={handlePinVerify}
           title="Verify Your PIN"
           description="Enter your PIN to authorize this transfer"
+          required
         />
       </DialogContent>
+
+      {/* Receipt Modal */}
+      <Dialog open={showReceipt} onOpenChange={(open) => {
+        setShowReceipt(open);
+        if (!open) onClose();
+      }}>
+        <DialogContent className="sm:max-w-[450px]">
+          <DialogHeader>
+            <div className="mx-auto w-16 h-16 rounded-full bg-green-500/10 flex items-center justify-center mb-4">
+              <CheckCircle2 className="h-10 w-10 text-green-600" />
+            </div>
+            <DialogTitle className="text-center text-2xl">Transfer Successful!</DialogTitle>
+            <DialogDescription className="text-center">
+              Your money has been sent successfully
+            </DialogDescription>
+          </DialogHeader>
+
+          {receiptData && (
+            <div className="space-y-4">
+              <Card>
+                <CardContent className="p-4 space-y-3">
+                  <div className="text-center border-b pb-3">
+                    <div className="text-sm text-muted-foreground">Amount Sent</div>
+                    <div className="text-3xl font-bold text-green-600">
+                      KES {receiptData.amount.toLocaleString()}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Recipient:</span>
+                      <span className="font-medium">{receiptData.recipient}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Transaction Fee:</span>
+                      <span>KES {receiptData.fee.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Total Deducted:</span>
+                      <span className="font-semibold">KES {receiptData.total.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between pt-2 border-t">
+                      <span className="text-muted-foreground">New Balance:</span>
+                      <span className="font-semibold text-primary">
+                        KES {receiptData.newBalance.toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Transaction ID:</span>
+                      <span className="text-xs font-mono">{receiptData.transactionId}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Date & Time:</span>
+                      <span className="text-xs">
+                        {new Date(receiptData.timestamp).toLocaleString()}
+                      </span>
+                    </div>
+                    {receiptData.description && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Description:</span>
+                        <span className="text-xs">{receiptData.description}</span>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Button 
+                onClick={() => {
+                  setShowReceipt(false);
+                  onClose();
+                }} 
+                className="w-full"
+              >
+                Done
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 };
