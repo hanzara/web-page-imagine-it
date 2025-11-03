@@ -375,12 +375,32 @@ export const SendMoneyModal: React.FC<SendMoneyModalProps> = ({
         // Use wallet balance to fund the mobile money transfer
         setIsLoading(true);
         try {
+          // Format phone number for Paystack (must be in format 254XXXXXXXXX)
+          let formattedPhone = recipientPhone.replace(/\s+/g, '');
+          
+          // Remove leading + if present
+          if (formattedPhone.startsWith('+')) {
+            formattedPhone = formattedPhone.substring(1);
+          }
+          
+          // Add 254 prefix if phone starts with 0
+          if (formattedPhone.startsWith('0')) {
+            formattedPhone = '254' + formattedPhone.substring(1);
+          }
+          
+          // Ensure it starts with 254
+          if (!formattedPhone.startsWith('254')) {
+            formattedPhone = '254' + formattedPhone;
+          }
+
+          console.log('Formatted phone for withdrawal:', formattedPhone);
+
           const { data, error } = await supabase.functions.invoke('withdraw-funds', {
             body: {
               amount: numericAmount,
               paymentMethod: paymentMethod === 'mpesa' ? 'mpesa' : 'airtel',
               destinationDetails: {
-                phone_number: recipientPhone,
+                phone_number: formattedPhone,
               },
               fee,
             }
