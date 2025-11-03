@@ -152,48 +152,59 @@ serve(async (req) => {
 
       console.log('Using provider:', provider);
 
-      // Normalize phone to international format without + (e.g., 2547XXXXXXXX)
-      let formattedPhone = String(destinationDetails.phone_number || '').replace(/\s+/g, '');
-      formattedPhone = formattedPhone.replace(/^\+/, '');
-      if (formattedPhone.startsWith('0')) {
-        formattedPhone = '254' + formattedPhone.slice(1);
-      } else if (!formattedPhone.startsWith('254')) {
-        // If it's not starting with 254, assume it's a local number and prefix
-        formattedPhone = '254' + formattedPhone;
+      // Normalize phone formats
+      let rawPhone = String(destinationDetails.phone_number || '').trim();
+      let phoneNoSpaces = rawPhone.replace(/\s+/g, '').replace(/-/g, '');
+      let intlPhone = phoneNoSpaces.replace(/^\+/, '');
+      if (intlPhone.startsWith('0')) {
+        intlPhone = '254' + intlPhone.slice(1);
+      } else if (!intlPhone.startsWith('254')) {
+        intlPhone = '254' + intlPhone;
       }
-      // Create mobile money recipient
-      const recipientResponse = await fetch('https://api.paystack.co/transferrecipient', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${paystackSecretKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          type: 'mobile_money',
-          name: user.email || 'User',
-          account_number: formattedPhone,
-          bank_code: provider.code,
-          currency: 'KES',
-          metadata: {
-            provider: paymentMethod,
-          }
-        }),
-      });
+      const localPhone = intlPhone.startsWith('254') ? '0' + intlPhone.slice(3) : phoneNoSpaces;
 
-      const recipientData = await recipientResponse.json();
-      
-      if (!recipientResponse.ok || !recipientData.status) {
-        console.error('Recipient creation failed:', recipientData);
+      console.log('Prepared phones:', { intlPhone, localPhone });
+
+      async function createRecipientWithPhone(phone: string) {
+        const resp = await fetch('https://api.paystack.co/transferrecipient', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${paystackSecretKey}`,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: JSON.stringify({
+            type: 'mobile_money',
+            name: user.email || 'User',
+            account_number: phone,
+            bank_code: provider.code,
+            currency: 'KES',
+            metadata: { provider: paymentMethod },
+          }),
+        });
+        const data = await resp.json();
+        return { ok: resp.ok && data?.status, data, message: data?.message as string };
+      }
+
+      // Try international format first, then fallback to local format if needed
+      let recipientResp = await createRecipientWithPhone(intlPhone);
+      if (!recipientResp.ok && typeof recipientResp.message === 'string' && recipientResp.message.toLowerCase().includes('account number is invalid')) {
+        console.warn('Intl format rejected, retrying with local format');
+        recipientResp = await createRecipientWithPhone(localPhone);
+      }
+
+      if (!recipientResp.ok) {
+        console.error('Recipient creation failed:', recipientResp.data);
         return new Response(
-          JSON.stringify({ 
-            error: recipientData.message || 'Failed to create recipient',
-            success: false 
+          JSON.stringify({
+            error: recipientResp.message || 'Failed to create recipient',
+            success: false
           }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      recipientCode = recipientData.data.recipient_code;
+      recipientCode = recipientResp.data.data.recipient_code;
     } else {
       // Create bank recipient
       const recipientResponse = await fetch('https://api.paystack.co/transferrecipient', {
